@@ -23,6 +23,7 @@ var levelScoreBands = map[int][2]int{
 	3: {750, 1050},
 	4: {1250, 1550},
 	5: {1800, 2200},
+	6: {2300, 2700},
 }
 
 // localeNames pairs ISO country codes with first names common there.
@@ -70,7 +71,7 @@ func DefaultRoster() []Identity {
 		name := uniquifyName(base, usedNames, i)
 		usedNames[base]++
 
-		level := (i % 5) + 1
+		level := (i % 6) + 1
 		band := levelScoreBands[level]
 		score := band[0] + stableInt(i, "score")%(band[1]-band[0]+1)
 		out = append(out, Identity{

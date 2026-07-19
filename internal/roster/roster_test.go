@@ -27,7 +27,7 @@ func TestDefaultRosterStableIDs(t *testing.T) {
 			t.Fatalf("duplicate id %s", a[i].ID)
 		}
 		seen[a[i].ID] = true
-		if a[i].EngineLevel < 1 || a[i].EngineLevel > 5 {
+		if a[i].EngineLevel < 1 || a[i].EngineLevel > 6 {
 			t.Fatalf("bad level %d", a[i].EngineLevel)
 		}
 	}
