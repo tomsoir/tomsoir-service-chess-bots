@@ -1,0 +1,108 @@
+name: Build, Publish and Deploy Docker image to K8s
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - '*'
+
+env:
+  DOCKER_FILE: "./Dockerfile"
+  DOCKER_IMAGE: "tomsoir/tomsoir-service-chess-bots"
+  HELM_CHART_REPO: "tomsoir/tomsoir-cluster"
+  HELM_CHART_REPO_DIR: "./__infra"
+  HELM_CHART_PATH: "/helm/tomsoir-service-chess-bots-chart"
+  HELM_RELEASE_NAME: "tomsoir-service-chess-bots-release"
+  BUILD_METAINFO_FILE: "./tomsoir-build.json"
+
+jobs:
+  build_and_push_to_registry:
+    name: Build and Push Docker image to Docker Hub
+    runs-on: ubuntu-latest
+    steps:
+      - name: Display tag name
+        run: echo "tag-name=${{ github.ref_name }}"
+
+      - name: Check out the repo
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.ADMIN_GITHUB_TOKEN }}
+
+      - name: Login to DockerHub
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+
+      - name: Extract metadata (tags, labels) for Docker
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.DOCKER_IMAGE }}
+
+      - name: Generate Build Meta Info file (${{ env.BUILD_METAINFO_FILE }})
+        run: |
+          DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          echo '{
+            "date": "'"$DATE"'",
+            "tag": "${{ github.ref }}",
+            "tag_name": "${{ github.ref_name }}",
+            "commit": "${{ github.sha }}",
+            "event_name": "${{ github.event_name }}",
+            "action_repository": "${{ github.action_repository }}",
+            "actor": "${{ github.actor }}",
+            "base_ref": "${{ github.base_ref }}",
+            "ref_type": "${{ github.ref_type }}",
+            "repository": "${{ github.repository }}",
+            "run_id": "${{ github.run_id }}"
+          }' > ${{ env.BUILD_METAINFO_FILE }}
+        shell: bash
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ${{ env.DOCKER_FILE }}
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+
+    outputs:
+      tags: ${{ steps.meta.outputs.tags }}
+
+  deploy_to_k8s:
+    name: Deploy docker image to K8s
+    needs: build_and_push_to_registry
+    runs-on: ubuntu-latest
+    steps:
+      - name: Display tag name
+        run: echo "tag-name=${{ github.ref_name }}"
+
+      - name: Check out the repo
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.ADMIN_GITHUB_TOKEN }}
+
+      - name: Setup Helm
+        uses: azure/setup-helm@v3
+        with:
+         version: '3.7.1'
+         token: ${{ secrets.ADMIN_GITHUB_TOKEN }}
+        id: install
+
+      - name: Clone Helm Chart Private Repository
+        uses: actions/checkout@master
+        with:
+          repository: ${{ env.HELM_CHART_REPO }}
+          token: ${{ secrets.ADMIN_GITHUB_TOKEN }}
+          path: ${{ env.HELM_CHART_REPO_DIR }}
+
+      - name: Helm Upgrade
+        run: |
+          export KUBECONFIG=${{ env.HELM_CHART_REPO_DIR }}/configs/kube/config
+          if [[ -n "${{ github.ref_name }}" ]]; then
+            helm upgrade ${{ env.HELM_RELEASE_NAME }} ${{ env.HELM_CHART_REPO_DIR }}/${{ env.HELM_CHART_PATH }} --set image.tag=${{ github.ref_name }}
+          else
+            echo "Skipping Helm upgrade as 'tags' output is not present. TAG: ${{ github.ref_name }}"
+          fi

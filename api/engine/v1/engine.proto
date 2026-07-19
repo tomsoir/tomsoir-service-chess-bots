@@ -1,0 +1,77 @@
+syntax = "proto3";
+
+package tomsoir.engine.v1;
+
+option go_package = "tomsoir-service-chess-bots/api/engine/v1;enginev1";
+
+service ChessEngineService {
+  rpc GetBestMove(GetBestMoveRequest) returns (GetBestMoveResponse);
+  rpc EnqueueGameAnalysis(EnqueueGameAnalysisRequest) returns (EnqueueGameAnalysisResponse);
+  rpc EnqueuePositionAnalysis(EnqueuePositionAnalysisRequest) returns (EnqueuePositionAnalysisResponse);
+  rpc GetAnalysis(GetAnalysisRequest) returns (GetAnalysisResponse);
+}
+
+message GetBestMoveRequest {
+  string fen = 1;
+  string variant = 2;
+  int32 engine_level = 3;
+  int32 movetime_ms = 4;
+}
+
+message GetBestMoveResponse {
+  string uci = 1;
+  int32 eval_cp = 2;
+}
+
+message EnqueueGameAnalysisRequest {
+  string game_id = 1;
+  string variant = 2;
+  repeated string moves = 3;
+  string fen = 4;
+  int32 depth = 5;
+}
+
+message EnqueueGameAnalysisResponse {
+  string job_id = 1;
+  string status = 2;
+}
+
+message EnqueuePositionAnalysisRequest {
+  string game_id = 1;
+  int32 ply = 2;
+  string fen = 3;
+  string variant = 4;
+  repeated string moves = 5;
+  int32 depth = 6;
+  string job_type = 7;
+}
+
+message EnqueuePositionAnalysisResponse {
+  string job_id = 1;
+  string status = 2;
+}
+
+message AnalysisPoint {
+  int32 ply = 1;
+  string uci = 2;
+  int32 eval_cp = 3;
+  double eval_white_pct = 4;
+  string best_uci = 5;
+  string played_uci = 6;
+  int32 cp_loss = 7;
+  string classification = 8;
+  string symbol = 9;
+  repeated string pv = 10;
+  int64 clock_ms = 11;
+}
+
+message GetAnalysisRequest {
+  string game_id = 1;
+}
+
+message GetAnalysisResponse {
+  string game_id = 1;
+  string status = 2;
+  repeated AnalysisPoint points = 3;
+  string analysis_json = 4;
+}

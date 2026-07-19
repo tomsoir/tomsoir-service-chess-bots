@@ -1,0 +1,13 @@
+root = "."
+tmp_dir = "tmp"
+
+[build]
+cmd = "go build -o ./tmp/main ."
+bin = "./tmp/main"
+include_ext = ["go", "yaml"]
+exclude_dir = ["tmp", "vendor"]
+exclude_regex = ["_test\\.go", ".*\\.pb\\.go$"]
+delay = 300
+
+[log]
+time = false

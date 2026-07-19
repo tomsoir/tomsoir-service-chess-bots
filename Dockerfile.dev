@@ -1,0 +1,17 @@
+FROM golang:1.23.2-alpine
+
+RUN apk add --no-cache git ca-certificates
+RUN go install github.com/air-verse/air@v1.52.3
+
+WORKDIR /app
+
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY .air.toml .air.toml
+
+EXPOSE 9600
+
+ENV APP_PORT=9600
+
+CMD ["air", "-c", ".air.toml"]
