@@ -9,13 +9,24 @@ import (
 func TestDefaultRosterStableIDs(t *testing.T) {
 	a := roster.DefaultRoster()
 	b := roster.DefaultRoster()
-	if len(a) != 40 {
-		t.Fatalf("expected 40 bots, got %d", len(a))
+	if len(a) != 60 {
+		t.Fatalf("expected 60 bots, got %d", len(a))
 	}
+	seen := map[string]bool{}
 	for i := range a {
 		if a[i].ID != b[i].ID {
 			t.Fatalf("unstable id at %d", i)
 		}
+		if a[i].Name == "" || a[i].CountryCode == "" {
+			t.Fatalf("empty name/country at %d", i)
+		}
+		if len(a[i].CountryCode) != 2 {
+			t.Fatalf("bad country %q at %d", a[i].CountryCode, i)
+		}
+		if seen[a[i].ID] {
+			t.Fatalf("duplicate id %s", a[i].ID)
+		}
+		seen[a[i].ID] = true
 		if a[i].EngineLevel < 1 || a[i].EngineLevel > 5 {
 			t.Fatalf("bad level %d", a[i].EngineLevel)
 		}

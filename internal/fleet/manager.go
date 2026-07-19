@@ -340,6 +340,7 @@ func (m *Manager) join(ctx context.Context, id roster.Identity, minutes int, tc,
 	if err != nil {
 		return err
 	}
+	m.presence.Online(m.rootCtx, id.ID)
 	if res.Status == "matched" && res.Game != nil {
 		go m.play.HandleGame(ctx, id, res.GameID, res.Game)
 		m.mu.Lock()
@@ -390,6 +391,7 @@ func (m *Manager) leaveOne(ctx context.Context, playerID string) {
 		return
 	}
 	_ = m.chess.LeaveLobby(ctx, ab.lobbyID)
+	m.presence.Offline(playerID)
 }
 
 func (m *Manager) leaveAll(ctx context.Context) {
@@ -402,6 +404,7 @@ func (m *Manager) leaveAll(ctx context.Context) {
 	for _, id := range ids {
 		m.leaveOne(ctx, id)
 	}
+	m.presence.CloseAll()
 }
 
 func (m *Manager) heartbeatAll(ctx context.Context) {
@@ -432,4 +435,8 @@ func (m *Manager) MarkGameDone(playerID string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	delete(m.inGame, playerID)
+	// Bot finished a game and is no longer waiting — drop site presence until respawned.
+	if _, waiting := m.active[playerID]; !waiting {
+		m.presence.Offline(playerID)
+	}
 }

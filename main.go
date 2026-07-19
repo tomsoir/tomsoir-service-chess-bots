@@ -16,6 +16,7 @@ import (
 	"tomsoir-service-chess-bots/internal/fleet"
 	"tomsoir-service-chess-bots/internal/play"
 	"tomsoir-service-chess-bots/internal/roster"
+	"tomsoir-service-chess-bots/internal/wsclient"
 )
 
 func main() {
@@ -73,8 +74,9 @@ func runFleet(ctx context.Context) {
 	}
 
 	chess := chessapi.New(config.ChessHTTPBase())
+	presence := wsclient.NewPresenceHub(config.RealtimeWSBase())
 	driver := play.New(chess, engine, config.RealtimeWSBase())
-	mgr := fleet.New(chess, identities, driver)
+	mgr := fleet.New(chess, identities, driver, presence)
 	driver.SetOnDone(mgr.MarkGameDone)
 
 	log.Printf("fleet starting (chess=%s engine=%s ws=%s min=%d max=%d)",
