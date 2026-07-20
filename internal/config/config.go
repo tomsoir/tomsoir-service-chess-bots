@@ -73,12 +73,18 @@ func EngineMaxConcurrency() int {
 }
 
 func FleetTick() time.Duration {
-	sec := envInt("BOTS_FLEET_TICK_SEC", 8)
+	sec := envInt("BOTS_FLEET_TICK_SEC", 2)
 	return time.Duration(sec) * time.Second
 }
 
 func HeartbeatEvery() time.Duration {
 	sec := envInt("BOTS_HEARTBEAT_SEC", 30)
+	return time.Duration(sec) * time.Second
+}
+
+// SeekerGrace is how long a real player may wait alone before we force a bot match.
+func SeekerGrace() time.Duration {
+	sec := envInt("BOTS_SEEKER_GRACE_SEC", 7)
 	return time.Duration(sec) * time.Second
 }
 

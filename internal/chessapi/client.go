@@ -99,6 +99,25 @@ func (c *Client) LeaveLobby(ctx context.Context, lobbyID string) error {
 	return c.postNoContent(ctx, "/v1/lobby/leave", map[string]any{"lobby_id": lobbyID})
 }
 
+type MatchResult struct {
+	Status string `json:"status"`
+	GameID string `json:"game_id"`
+	Color  string `json:"color"`
+	Game   *Game  `json:"game"`
+}
+
+func (c *Client) Match(ctx context.Context, playerID, lobbyID, targetLobbyID string) (*MatchResult, error) {
+	var out MatchResult
+	if err := c.post(ctx, "/v1/lobby/match", map[string]any{
+		"player_id":        playerID,
+		"lobby_id":         lobbyID,
+		"target_lobby_id":  targetLobbyID,
+	}, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
 func (c *Client) ListWaiting(ctx context.Context) ([]LobbyEntry, error) {
 	var out struct {
 		Entries []LobbyEntry `json:"entries"`
