@@ -26,41 +26,41 @@ var levelScoreBands = map[int][2]int{
 	6: {2300, 2700},
 }
 
-// localeNames pairs ISO country codes with first names common there.
+// localeNames pairs ISO country codes with funny chess nicknames.
 var localeNames = []struct {
 	Country string
 	Names   []string
 }{
-	{"US", []string{"James", "Emily", "Michael", "Ashley", "Chris", "Megan", "Ryan", "Lauren", "Justin", "Hannah"}},
-	{"GB", []string{"Oliver", "Amelia", "Harry", "Chloe", "Jack", "Sophie", "George", "Emily", "Charlie", "Isla"}},
-	{"DE", []string{"Lukas", "Mia", "Leon", "Emma", "Paul", "Hannah", "Finn", "Marie", "Jonas", "Lina"}},
-	{"FR", []string{"Lucas", "Léa", "Hugo", "Chloé", "Louis", "Manon", "Gabriel", "Camille", "Arthur", "Inès"}},
-	{"ES", []string{"Pablo", "Lucía", "Diego", "María", "Álvaro", "Sofía", "Carlos", "Carmen", "Javier", "Elena"}},
-	{"IT", []string{"Lorenzo", "Giulia", "Matteo", "Sofia", "Alessandro", "Aurora", "Leonardo", "Alice", "Francesco", "Giorgia"}},
-	{"BR", []string{"Gabriel", "Ana", "Pedro", "Beatriz", "Lucas", "Julia", "Rafael", "Larissa", "Mateus", "Fernanda"}},
-	{"MX", []string{"Santiago", "Valentina", "Mateo", "Camila", "Sebastián", "Ximena", "Diego", "Renata", "Emiliano", "Sofía"}},
-	{"CA", []string{"Liam", "Olivia", "Noah", "Emma", "Ethan", "Ava", "Lucas", "Sophia", "Mason", "Charlotte"}},
-	{"AU", []string{"Jack", "Charlotte", "William", "Olivia", "Thomas", "Mia", "James", "Amelia", "Henry", "Isla"}},
-	{"JP", []string{"Haruto", "Yui", "Sota", "Aoi", "Yuto", "Hina", "Ren", "Sakura", "Hiroto", "Mei"}},
-	{"KR", []string{"Minjun", "Seoyeon", "Jiwon", "Hayun", "Dooyun", "Suji", "Hyunwoo", "Jimin", "Seojun", "Yuna"}},
-	{"IN", []string{"Aarav", "Aisha", "Vihaan", "Ananya", "Arjun", "Diya", "Rohan", "Isha", "Kabir", "Meera"}},
-	{"NL", []string{"Daan", "Emma", "Sem", "Julia", "Luuk", "Sophie", "Finn", "Sara", "Bram", "Lotte"}},
-	{"SE", []string{"Erik", "Alice", "Lars", "Ella", "Oskar", "Maja", "Johan", "Wilma", "Nils", "Alva"}},
-	{"PL", []string{"Jakub", "Zuzanna", "Antoni", "Julia", "Jan", "Maja", "Szymon", "Lena", "Franciszek", "Oliwia"}},
-	{"AR", []string{"Tomás", "Valentina", "Benjamín", "Emma", "Santiago", "Catalina", "Mateo", "Martina", "Joaquín", "Isabella"}},
-	{"PT", []string{"João", "Maria", "Rodrigo", "Ana", "Tiago", "Beatriz", "Miguel", "Inês", "Francisco", "Leonor"}},
-	{"IE", []string{"Conor", "Aoife", "Sean", "Ciara", "Cian", "Saoirse", "Oisin", "Niamh", "Patrick", "Orla"}},
-	{"NZ", []string{"Oliver", "Charlotte", "Jack", "Olivia", "Noah", "Isla", "Leo", "Amelia", "Hunter", "Mia"}},
-	{"TR", []string{"Emir", "Zeynep", "Yusuf", "Elif", "Eymen", "Asya", "Mert", "Defne", "Kerem", "Ecrin"}},
-	{"UA", []string{"Andriy", "Olena", "Dmytro", "Sofia", "Oleksandr", "Anna", "Maksym", "Maria", "Ivan", "Yulia"}},
-	{"CZ", []string{"Jakub", "Eliška", "Jan", "Tereza", "Tomáš", "Adéla", "Matyáš", "Viktorie", "Adam", "Natálie"}},
-	{"RO", []string{"Andrei", "Maria", "Alexandru", "Elena", "David", "Ioana", "Stefan", "Andreea", "Mihai", "Ana"}},
+	{"US", []string{"shake_my_bishup", "hung_piece_club", "blunderbuss99", "check_yourself", "rook_and_roll", "pawn_star", "oops_all_blunders", "knight_mare", "castle_crashers", "queen_me_asap"}},
+	{"GB", []string{"tea_and_tempo", "en_passant_innit", "stiff_upper_lip_zugzwang", "crumpet_mate", "bish_bash_bosh", "cheeky_fork", "keep_calm_and_castle", "blighty_blunder", "scone_and_skewer", "spot_of_check"}},
+	{"DE", []string{"schnell_schach", "bauer_no_friends", "zugzwang_und_fertig", "ritter_der_blunder", "kein_remis", "turm_tempo", "doppelbauer_drama", "matt_in_zwei", "fesselung_fever", "e4_oder_bust"}},
+	{"FR", []string{"oui_oui_en_passant", "gambit_baguette", "roi_sans_roque", "fou_de_guerre", "pat_isserie", "echec_et_matelote", "tour_sacre", "blunder_du_jour", "tempo_s_il_vous_plait", "dame_fatale"}},
+	{"ES", []string{"siesta_then_mate", "jaque_mate_amigo", "alfil_loco", "peon_perdido", "enroque_rapido", "caballo_loco99", "torre_tapa", "gambito_tapas", "blunder_fiesta", "rey_desnudo"}},
+	{"IT", []string{"mamma_mia_mate", "pasta_and_pins", "cavallo_pazzo", "arrocco_espresso", "pedone_perduto", "alfiere_al_dente", "scacco_bello", "gambit_gelato", "tempo_tiramisu", "donna_drammatica"}},
+	{"BR", []string{"xeque_mate_samba", "peao_da_galera", "cavalo_maluco", "bispo_brabo", "roque_na_laje", "gambito_churrasco", "blunder_brabo", "dama_do_morro", "tempo_tropicália", "rei_sem_guarda"}},
+	{"MX", []string{"jaque_con_salsa", "peon_picante", "caballo_caliente", "alfil_asado", "enroque_con_chile", "gambito_guacamole", "blunder_burrito", "dama_del_desierto", "tempo_tacos", "rey_sin_fiesta"}},
+	{"CA", []string{"sorry_i_mated", "maple_leaf_blunder", "eh_passant", "rook_hockey", "pawnch_up", "knight_of_the_north", "castle_tims", "queen_of_poutine", "check_eh", "zugzwang_eh"}},
+	{"AU", []string{"gday_mate_in_2", "barbie_and_blunder", "roo_rook", "fair_dinkum_fork", "castling_crikey", "pawn_prawn", "bish_from_down_under", "queen_of_oz", "stalemate_mate", "tempo_too_right"}},
+	{"JP", []string{"sente_senpai", "koma_chaos", "castling_kun", "pawn_chan", "rook_sama", "bish_desu", "mate_or_bust_san", "gambit_gohan", "tempo_tokyo", "queen_kawaii"}},
+	{"KR", []string{"checkmate_oppa", "pawn_jjigae", "rook_ramen", "bish_bapsang", "castle_kimchi", "gambit_gaming", "blunder_busan", "queen_quick", "tempo_seoul", "knight_namsan"}},
+	{"IN", []string{"chai_and_checkmate", "gambit_garam", "rook_raja", "pawn_pani_puri", "bish_biryani", "castle_chai", "blunder_bollywood", "queen_of_spices", "tempo_tandoori", "knight_namaste"}},
+	{"NL", []string{"stroopwafel_skewer", "oranje_en_passant", "toren_tulpen", "pion_pils", "paard_power", "rokade_fiets", "blunder_dam", "dame_delft", "tempo_terras", "koning_kaas"}},
+	{"SE", []string{"fika_then_fork", "ikea_of_blunders", "torn_och_tempo", "bonde_bork", "hast_och_hurra", "rockad_lagom", "schack_matt_hej", "dam_dalahorse", "tempo_stockholm", "kung_kanel"}},
+	{"PL", []string{"pierogi_pin", "szach_mat_proszę", "wieża_wawa", "pionek_power", "skoczek_szalony", "roszada_rapid", "blunder_bigos", "hetman_hurra", "tempo_toruń", "król_kiełbasa"}},
+	{"AR", []string{"mate_con_mate", "peon_asado", "caballo_pampeano", "alfil_asado99", "enroque_asado", "gambito_asado", "blunder_bife", "dama_del_sur", "tempo_tango", "rey_rioplatense"}},
+	{"PT", []string{"xeque_com_pastel", "peao_do_bairro", "cavalo_lisboa", "bispo_bacalhau", "roque_rapidinho", "gambito_galão", "blunder_belem", "dama_do_tejo", "tempo_tram", "rei_sem_castelo"}},
+	{"IE", []string{"craic_and_checkmate", "luck_o_the_fork", "rook_of_dublin", "pawnch_drunk", "bish_begorra", "castling_craic", "blunder_blarney", "queen_of_cork", "tempo_tweed", "knight_of_kerry"}},
+	{"NZ", []string{"sweet_as_mate", "kiwi_knight", "rook_of_aotearoa", "pawn_pavlova", "bish_from_the_bush", "castling_cuzzy", "blunder_bro", "queen_of_queenstown", "tempo_tiki", "check_yeah_nah"}},
+	{"TR", []string{"çay_and_check", "şah_mat_abi", "kale_kebap", "piyon_pide", "at_aheste", "rok_rakı", "blunder_baklava", "vezir_vay", "tempo_taksim", "şah_şiş"}},
+	{"RU", []string{"siberian_skewer", "babushka_blunder", "ladya_loves_you", "peshka_power", "kon_chaos", "rokada_rapid", "mat_v_dva", "ferz_forever", "tempo_tundra", "korol_keksa"}},
+	{"CZ", []string{"pivo_and_pins", "sach_mat_prosím", "vez_vltava", "pesak_pils", "kun_chaos", "rosada_rapid", "blunder_brno", "dama_dumplings", "tempo_prague", "kral_knedlik"}},
+	{"RO", []string{"mamaliga_mate", "sah_mat_bre", "tura_timis", "pion_power", "cal_crazy", "rocada_rapid", "blunder_bucuresti", "dama_de_dunare", "tempo_transilvania", "rege_fara_tura"}},
 }
 
 const rosterSize = 60
 
 // DefaultRoster builds a fixed pool of bot identities with stable UUIDs,
-// realistic first names, and matching country codes.
+// funny chess nicknames, and matching country codes.
 func DefaultRoster() []Identity {
 	out := make([]Identity, 0, rosterSize)
 	usedNames := map[string]int{}
