@@ -91,7 +91,7 @@ func (s *SiteSession) runOnce(ctx context.Context, wsBase, playerID string) erro
 	}
 }
 
-// PresenceHub tracks site sockets for bots that are currently "on the site".
+// PresenceHub tracks site sockets for bots that are currently "on the site"!
 type PresenceHub struct {
 	wsBase string
 	mu     sync.Mutex
