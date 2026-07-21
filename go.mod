@@ -3,6 +3,7 @@ module tomsoir-service-chess-bots
 go 1.23.2
 
 require (
+	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.3
 	github.com/redis/go-redis/v9 v9.7.0
 	google.golang.org/grpc v1.67.1

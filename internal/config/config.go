@@ -84,7 +84,7 @@ func HeartbeatEvery() time.Duration {
 
 // SeekerGrace is how long a real player may wait alone before we force a bot match.
 func SeekerGrace() time.Duration {
-	sec := envInt("BOTS_SEEKER_GRACE_SEC", 7)
+	sec := envInt("BOTS_SEEKER_GRACE_SEC", 5)
 	return time.Duration(sec) * time.Second
 }
 

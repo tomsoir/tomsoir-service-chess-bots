@@ -2,11 +2,12 @@ package roster
 
 import (
 	"fmt"
-	"hash/fnv"
 	"math/rand/v2"
+
+	"github.com/google/uuid"
 )
 
-// Identity is a stable fake player used in the lobby fleet.
+// Identity is a lobby bot player. Ephemeral bots are one-shot Guests.
 type Identity struct {
 	ID          string
 	Name        string
@@ -26,7 +27,7 @@ var levelScoreBands = map[int][2]int{
 	6: {2300, 2700},
 }
 
-// localeNames pairs ISO country codes with funny chess nicknames.
+// localeNames pairs ISO country codes with funny chess nicknames (rare Guest names).
 var localeNames = []struct {
 	Country string
 	Names   []string
@@ -34,7 +35,7 @@ var localeNames = []struct {
 	{"US", []string{"shake_my_bishup", "hung_piece_club", "blunderbuss99", "check_yourself", "rook_and_roll", "pawn_star", "oops_all_blunders", "knight_mare", "castle_crashers", "queen_me_asap"}},
 	{"GB", []string{"tea_and_tempo", "en_passant_innit", "stiff_upper_lip_zugzwang", "crumpet_mate", "bish_bash_bosh", "cheeky_fork", "keep_calm_and_castle", "blighty_blunder", "scone_and_skewer", "spot_of_check"}},
 	{"DE", []string{"schnell_schach", "bauer_no_friends", "zugzwang_und_fertig", "ritter_der_blunder", "kein_remis", "turm_tempo", "doppelbauer_drama", "matt_in_zwei", "fesselung_fever", "e4_oder_bust"}},
-	{"FR", []string{"oui_oui_en_passant", "gambit_baguette", "roi_sans_roque", "fou_de_guerre", "pat_isserie", "echec_et_matelote", "tour_sacre", "blunder_du_jour", "tempo_s_il_vous_plait", "dame_fatale"}},
+	{"FR", []string{"oui_oui_en_passant", "gambit_baguette", "roi_sans_roque", "fou_de_guerre", "pat_isserie", "echec_et_matelote", "cavalier_sacre", "blunder_du_jour", "tempo_s_il_vous_plait", "dame_fatale"}},
 	{"ES", []string{"siesta_then_mate", "jaque_mate_amigo", "alfil_loco", "peon_perdido", "enroque_rapido", "caballo_loco99", "torre_tapa", "gambito_tapas", "blunder_fiesta", "rey_desnudo"}},
 	{"IT", []string{"mamma_mia_mate", "pasta_and_pins", "cavallo_pazzo", "arrocco_espresso", "pedone_perduto", "alfiere_al_dente", "scacco_bello", "gambit_gelato", "tempo_tiramisu", "donna_drammatica"}},
 	{"BR", []string{"xeque_mate_samba", "peao_da_galera", "cavalo_maluco", "bispo_brabo", "roque_na_laje", "gambito_churrasco", "blunder_brabo", "dama_do_morro", "tempo_tropicália", "rei_sem_guarda"}},
@@ -57,44 +58,47 @@ var localeNames = []struct {
 	{"RO", []string{"mamaliga_mate", "sah_mat_bre", "tura_timis", "pion_power", "cal_crazy", "rocada_rapid", "blunder_bucuresti", "dama_de_dunare", "tempo_transilvania", "rege_fara_tura"}},
 }
 
-const rosterSize = 60
+// RareNameChance is the probability an ephemeral bot gets a funny nickname instead of "Guest".
+const RareNameChance = 0.12
 
-// DefaultRoster builds a fixed pool of bot identities with stable UUIDs,
-// funny chess nicknames, and matching country codes.
-func DefaultRoster() []Identity {
-	out := make([]Identity, 0, rosterSize)
-	usedNames := map[string]int{}
-	for i := 0; i < rosterSize; i++ {
-		locale := localeNames[stableInt(i, "locale")%len(localeNames)]
-		namePool := locale.Names
-		base := namePool[stableInt(i, "name")%len(namePool)]
-		name := uniquifyName(base, usedNames, i)
-		usedNames[base]++
-
-		level := (i % 6) + 1
-		band := levelScoreBands[level]
-		score := band[0] + stableInt(i, "score")%(band[1]-band[0]+1)
-		out = append(out, Identity{
-			ID:          stableUUID(i),
-			Name:        name,
-			CountryCode: locale.Country,
-			Score:       score,
-			EngineLevel: level,
-			EmojiRate:   0.12 + float64(stableInt(i, "emoji")%35)/100,
-		})
+// NewEphemeral builds a one-shot bot identity. Name is usually "Guest".
+// nearScore 0 picks a random band; otherwise score is within ±200 of the seeker.
+func NewEphemeral(nearScore int) Identity {
+	level := 3
+	if nearScore > 0 {
+		level = LevelForScore(nearScore)
+	} else {
+		level = 1 + rand.IntN(6)
 	}
-	return out
+	score := ScoreNear(nearScore, level)
+	if nearScore <= 0 {
+		band := levelScoreBands[level]
+		score = band[0] + rand.IntN(band[1]-band[0]+1)
+	}
+	name, country := guestName()
+	return Identity{
+		ID:          uuid.NewString(),
+		Name:        name,
+		CountryCode: country,
+		Score:       score,
+		EngineLevel: level,
+		EmojiRate:   0.08 + rand.Float64()*0.25,
+	}
 }
 
-func uniquifyName(base string, used map[string]int, i int) string {
-	n := used[base]
-	if n == 0 {
-		return base
+func guestName() (name, country string) {
+	if rand.Float64() >= RareNameChance {
+		return "Guest", "US"
 	}
-	// Occasional last-initial style when first names collide (looks human).
-	initials := "ABCDEFGHJKLMNPRSTW"
-	ch := initials[stableInt(i, "initial")%len(initials)]
-	return fmt.Sprintf("%s %c.", base, ch)
+	locale := localeNames[rand.IntN(len(localeNames))]
+	base := locale.Names[rand.IntN(len(locale.Names))]
+	// Occasional last-initial so rare names don't look cloned.
+	if rand.Float64() < 0.25 {
+		initials := "ABCDEFGHJKLMNPRSTW"
+		ch := initials[rand.IntN(len(initials))]
+		base = fmt.Sprintf("%s %c.", base, ch)
+	}
+	return base, locale.Country
 }
 
 // LevelForScore picks an engine level whose score band is closest to target.
@@ -118,6 +122,9 @@ func LevelForScore(score int) int {
 // ScoreNear returns a score within ±200 of target, clamped to the level band when possible.
 func ScoreNear(target, level int) int {
 	band := levelScoreBands[level]
+	if target <= 0 {
+		return band[0] + rand.IntN(band[1]-band[0]+1)
+	}
 	lo := target - 200
 	hi := target + 200
 	if lo < band[0] {
@@ -141,23 +148,4 @@ func WithinBand(a, b int) bool {
 		d = -d
 	}
 	return d <= 200
-}
-
-func stableUUID(i int) string {
-	h := fnv.New128a()
-	_, _ = h.Write([]byte("tomsoir-chess-bot-v2"))
-	_, _ = h.Write([]byte{byte(i), byte(i >> 8)})
-	sum := h.Sum(nil)
-	sum[6] = (sum[6] & 0x0f) | 0x40
-	sum[8] = (sum[8] & 0x3f) | 0x80
-	return fmt.Sprintf("%02x%02x%02x%02x-%02x%02x-%02x%02x-%02x%02x-%02x%02x%02x%02x%02x%02x",
-		sum[0], sum[1], sum[2], sum[3], sum[4], sum[5], sum[6], sum[7],
-		sum[8], sum[9], sum[10], sum[11], sum[12], sum[13], sum[14], sum[15])
-}
-
-func stableInt(i int, salt string) int {
-	h := fnv.New32a()
-	_, _ = h.Write([]byte(salt))
-	_, _ = h.Write([]byte{byte(i)})
-	return int(h.Sum32())
 }

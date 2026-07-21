@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"tomsoir-service-chess-bots/internal/botsreg"
 	"tomsoir-service-chess-bots/internal/chessapi"
 	"tomsoir-service-chess-bots/internal/config"
 	"tomsoir-service-chess-bots/internal/play"
@@ -25,7 +26,7 @@ type activeBot struct {
 
 type Manager struct {
 	chess    *chessapi.Client
-	roster   []roster.Identity
+	reg      *botsreg.Registry
 	play     *play.Driver
 	presence *wsclient.PresenceHub
 	rootCtx  context.Context
@@ -40,10 +41,10 @@ type Manager struct {
 	inGame map[string]bool
 }
 
-func New(chess *chessapi.Client, identities []roster.Identity, driver *play.Driver, presence *wsclient.PresenceHub) *Manager {
+func New(chess *chessapi.Client, reg *botsreg.Registry, driver *play.Driver, presence *wsclient.PresenceHub) *Manager {
 	return &Manager{
 		chess:    chess,
-		roster:   identities,
+		reg:      reg,
 		play:     driver,
 		presence: presence,
 		loc:      config.Timezone(),
@@ -78,7 +79,6 @@ func (m *Manager) Start(ctx context.Context) {
 
 func (m *Manager) targetVisible(now time.Time) int {
 	hour := now.In(m.loc).Hour()
-	// Quiet nights ~2-4, daytime ~4-8, evenings ~8-12
 	base := 4
 	switch {
 	case hour >= 0 && hour < 6:
@@ -125,7 +125,6 @@ func (m *Manager) tickOnce(ctx context.Context) {
 
 	m.reconcileMatched(ctx, entries)
 
-	// Priority: lonely real seekers get an in-band bot after a short grace, then we challenge them.
 	m.serveLonelySeekers(ctx, entries)
 
 	entries, err = m.chess.ListWaiting(ctx)
@@ -156,14 +155,12 @@ func (m *Manager) tickOnce(ctx context.Context) {
 	m.pollStatuses(ctx)
 }
 
-// serveLonelySeekers forces a bot opponent when a real player has waited past the grace
-// period with no compatible real opponent available.
 func (m *Manager) serveLonelySeekers(ctx context.Context, entries []chessapi.LobbyEntry) {
 	now := time.Now().UTC()
 	grace := config.SeekerGrace()
-	botIDs := m.rosterIDs()
+	botIDs := m.knownBotIDs()
 
-	for _, seeker := range m.realSeekers(entries) {
+	for _, seeker := range m.realSeekers(entries, botIDs) {
 		if m.hasCompatibleReal(entries, seeker, botIDs) {
 			continue
 		}
@@ -193,13 +190,13 @@ func (m *Manager) hasCompatibleReal(entries []chessapi.LobbyEntry, seeker chessa
 	return false
 }
 
-func (m *Manager) findBestInBandBot(entries []chessapi.LobbyEntry, seeker chessapi.LobbyEntry) *chessapi.LobbyEntry {
-	botIDs := m.rosterIDs()
+func (m *Manager) findBestInBandBot(entries []chessapi.LobbyEntry, seeker chessapi.LobbyEntry, exclude map[string]bool) *chessapi.LobbyEntry {
+	botIDs := m.knownBotIDs()
 	var best *chessapi.LobbyEntry
 	bestDiff := 1 << 30
 	for i := range entries {
 		e := &entries[i]
-		if !botIDs[e.PlayerID] {
+		if !botIDs[e.PlayerID] || exclude[e.PlayerID] {
 			continue
 		}
 		if e.Minutes != seeker.Minutes {
@@ -228,51 +225,141 @@ func (m *Manager) ensureBotMatch(ctx context.Context, seeker chessapi.LobbyEntry
 	if err != nil {
 		return err
 	}
-	// Seeker may have already left or been matched.
 	if !m.seekerStillWaiting(entries, seeker.PlayerID) {
 		return nil
 	}
-	if m.hasCompatibleReal(entries, seeker, m.rosterIDs()) {
+	if m.hasCompatibleReal(entries, seeker, m.knownBotIDs()) {
 		return nil
 	}
 
-	bot := m.findBestInBandBot(entries, seeker)
+	for _, e := range entries {
+		if e.PlayerID == seeker.PlayerID {
+			seeker = e
+			break
+		}
+	}
+
+	exclude := map[string]bool{}
+	bot := m.findBestInBandBot(entries, seeker, exclude)
 	if bot == nil {
-		if err := m.spawnNear(ctx, seeker); err != nil {
-			return fmt.Errorf("spawn near: %w", err)
+		spawned, spawnErr := m.spawnNear(ctx, seeker)
+		if spawnErr != nil {
+			return fmt.Errorf("spawn near: %w", spawnErr)
 		}
 		entries, err = m.chess.ListWaiting(ctx)
 		if err != nil {
 			return err
 		}
 		if !m.seekerStillWaiting(entries, seeker.PlayerID) {
-			return nil // matched on join via TryPairEntry
+			return nil
 		}
-		bot = m.findBestInBandBot(entries, seeker)
+		for _, e := range entries {
+			if e.PlayerID == seeker.PlayerID {
+				seeker = e
+				break
+			}
+		}
+		if spawned != nil {
+			bot = m.entryForPlayer(entries, spawned.ID)
+		}
+		if bot == nil {
+			bot = m.findBestInBandBot(entries, seeker, exclude)
+		}
 	}
 	if bot == nil {
 		return fmt.Errorf("no in-band bot after spawn")
 	}
 
+	if err := m.challengeSeeker(ctx, bot, seeker); err != nil {
+		failedID := bot.PlayerID
+		exclude[failedID] = true
+		m.leaveOne(ctx, failedID)
+
+		spawned, spawnErr := m.spawnNear(ctx, seeker)
+		if spawnErr != nil {
+			return fmt.Errorf("match challenge: %w (retry spawn: %v)", err, spawnErr)
+		}
+		entries, listErr := m.chess.ListWaiting(ctx)
+		if listErr != nil {
+			return fmt.Errorf("match challenge: %w (relist: %v)", err, listErr)
+		}
+		if !m.seekerStillWaiting(entries, seeker.PlayerID) {
+			return nil
+		}
+		for _, e := range entries {
+			if e.PlayerID == seeker.PlayerID {
+				seeker = e
+				break
+			}
+		}
+		bot = nil
+		if spawned != nil {
+			bot = m.entryForPlayer(entries, spawned.ID)
+		}
+		if bot == nil {
+			bot = m.findBestInBandBot(entries, seeker, exclude)
+		}
+		if bot == nil {
+			return fmt.Errorf("match challenge: %w (no bot after retry)", err)
+		}
+		if err := m.challengeSeeker(ctx, bot, seeker); err != nil {
+			return fmt.Errorf("match challenge retry: %w", err)
+		}
+	}
+	return nil
+}
+
+func (m *Manager) entryForPlayer(entries []chessapi.LobbyEntry, playerID string) *chessapi.LobbyEntry {
+	for i := range entries {
+		if entries[i].PlayerID == playerID {
+			return &entries[i]
+		}
+	}
+	return nil
+}
+
+func (m *Manager) challengeSeeker(ctx context.Context, bot *chessapi.LobbyEntry, seeker chessapi.LobbyEntry) error {
+	botLobbyID := bot.ID
 	m.mu.Lock()
 	ab, ok := m.active[bot.PlayerID]
-	m.mu.Unlock()
-	if !ok || ab.lobbyID == "" {
-		return fmt.Errorf("bot %s not in local active map", bot.PlayerName)
+	if ok && ab.lobbyID != "" {
+		botLobbyID = ab.lobbyID
 	}
+	identity := roster.Identity{
+		ID:          bot.PlayerID,
+		Name:        bot.PlayerName,
+		CountryCode: bot.CountryCode,
+		Score:       bot.Score,
+		EngineLevel: roster.LevelForScore(bot.Score),
+	}
+	if ok {
+		identity = ab.identity
+		identity.Score = bot.Score
+	} else {
+		m.active[bot.PlayerID] = &activeBot{
+			identity: identity,
+			lobbyID:  botLobbyID,
+			minutes:  bot.Minutes,
+			tc:       bot.TimeControl,
+			variant:  bot.Variant,
+		}
+		ab = m.active[bot.PlayerID]
+	}
+	m.mu.Unlock()
 
-	res, err := m.chess.Match(ctx, bot.PlayerID, ab.lobbyID, seeker.ID)
+	res, err := m.chess.Match(ctx, bot.PlayerID, botLobbyID, seeker.ID)
 	if err != nil {
-		return fmt.Errorf("match challenge: %w", err)
+		return err
 	}
 	if res != nil && res.Status == "matched" && res.Game != nil {
 		m.mu.Lock()
 		delete(m.active, bot.PlayerID)
 		m.inGame[bot.PlayerID] = true
+		identity = ab.identity
 		m.mu.Unlock()
-		go m.play.HandleGame(ctx, ab.identity, res.GameID, res.Game)
+		go m.play.HandleGame(ctx, identity, res.GameID, res.Game)
 		log.Printf("fleet matched bot %s (%d) → %s (%d) after grace",
-			ab.identity.Name, ab.identity.Score, seeker.PlayerName, seeker.Score)
+			identity.Name, identity.Score, seeker.PlayerName, seeker.Score)
 	}
 	return nil
 }
@@ -288,12 +375,12 @@ func (m *Manager) seekerStillWaiting(entries []chessapi.LobbyEntry, playerID str
 
 func (m *Manager) protectedBotIDs(entries []chessapi.LobbyEntry) map[string]bool {
 	out := map[string]bool{}
-	botIDs := m.rosterIDs()
-	for _, seeker := range m.realSeekers(entries) {
+	botIDs := m.knownBotIDs()
+	for _, seeker := range m.realSeekers(entries, botIDs) {
 		if m.hasCompatibleReal(entries, seeker, botIDs) {
 			continue
 		}
-		if bot := m.findBestInBandBot(entries, seeker); bot != nil {
+		if bot := m.findBestInBandBot(entries, seeker, nil); bot != nil {
 			out[bot.PlayerID] = true
 		}
 	}
@@ -305,23 +392,38 @@ func (m *Manager) reconcileMatched(ctx context.Context, entries []chessapi.Lobby
 	for _, e := range entries {
 		present[e.PlayerID] = true
 	}
+
+	type matched struct {
+		identity roster.Identity
+		gameID   string
+		game     *chessapi.Game
+	}
+	var toPlay []matched
+	var toRetire []string
+
 	m.mu.Lock()
-	defer m.mu.Unlock()
 	for id, ab := range m.active {
 		if present[id] {
 			continue
 		}
-		// Missing from lobby — check if matched into a game.
 		status, gameID, game, err := m.chess.LobbyStatus(ctx, ab.lobbyID)
 		if err == nil && status == "matched" && game != nil {
 			m.inGame[id] = true
 			delete(m.active, id)
-			m.presence.Online(m.rootCtx, ab.identity.ID)
-			go m.play.HandleGame(ctx, ab.identity, gameID, game)
+			toPlay = append(toPlay, matched{identity: ab.identity, gameID: gameID, game: game})
 			continue
 		}
-		m.presence.Offline(id)
 		delete(m.active, id)
+		toRetire = append(toRetire, id)
+	}
+	m.mu.Unlock()
+
+	for _, id := range toRetire {
+		m.retireBot(ctx, id)
+	}
+	for _, item := range toPlay {
+		m.presence.Online(m.rootCtx, item.identity.ID)
+		go m.play.HandleGame(ctx, item.identity, item.gameID, item.game)
 	}
 }
 
@@ -341,15 +443,16 @@ func (m *Manager) pollStatuses(ctx context.Context) {
 			m.mu.Lock()
 			delete(m.active, ab.identity.ID)
 			m.inGame[ab.identity.ID] = true
+			identity := ab.identity
 			m.mu.Unlock()
-			m.presence.Online(m.rootCtx, ab.identity.ID)
-			go m.play.HandleGame(ctx, ab.identity, gameID, game)
+			m.presence.Online(m.rootCtx, identity.ID)
+			go m.play.HandleGame(ctx, identity, gameID, game)
 		}
 	}
 }
 
 func (m *Manager) countBotWaiting(entries []chessapi.LobbyEntry) int {
-	ids := m.rosterIDs()
+	ids := m.knownBotIDs()
 	n := 0
 	for _, e := range entries {
 		if ids[e.PlayerID] {
@@ -359,27 +462,27 @@ func (m *Manager) countBotWaiting(entries []chessapi.LobbyEntry) int {
 	return n
 }
 
-func (m *Manager) rosterIDs() map[string]bool {
-	out := make(map[string]bool, len(m.roster))
-	for _, id := range m.roster {
-		out[id.ID] = true
+func (m *Manager) knownBotIDs() map[string]bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := make(map[string]bool, len(m.active)+len(m.inGame))
+	for id := range m.active {
+		out[id] = true
+	}
+	for id := range m.inGame {
+		out[id] = true
 	}
 	return out
 }
 
-func (m *Manager) realSeekers(entries []chessapi.LobbyEntry) []chessapi.LobbyEntry {
-	ids := m.rosterIDs()
+func (m *Manager) realSeekers(entries []chessapi.LobbyEntry, botIDs map[string]bool) []chessapi.LobbyEntry {
 	var out []chessapi.LobbyEntry
 	for _, e := range entries {
-		if !ids[e.PlayerID] {
+		if !botIDs[e.PlayerID] {
 			out = append(out, e)
 		}
 	}
 	return out
-}
-
-func (m *Manager) hasInBandBot(entries []chessapi.LobbyEntry, seeker chessapi.LobbyEntry) bool {
-	return m.findBestInBandBot(entries, seeker) != nil
 }
 
 func normalizeVariant(v string) string {
@@ -389,80 +492,31 @@ func normalizeVariant(v string) string {
 	return v
 }
 
-func (m *Manager) spawnNear(ctx context.Context, seeker chessapi.LobbyEntry) error {
-	level := roster.LevelForScore(seeker.Score)
-	id := m.pickIdleIdentity(level, seeker.Score)
-	if id == nil {
-		return nil
-	}
-	score := roster.ScoreNear(seeker.Score, level)
-	id.Score = score
-	id.EngineLevel = level
+func (m *Manager) spawnNear(ctx context.Context, seeker chessapi.LobbyEntry) (*roster.Identity, error) {
+	id := roster.NewEphemeral(seeker.Score)
 	tc := seeker.TimeControl
 	if tc == "" {
 		tc = fmt.Sprintf("%d+0", seeker.Minutes)
 	}
-	return m.join(ctx, *id, seeker.Minutes, tc, normalizeVariant(seeker.Variant))
+	if err := m.join(ctx, id, seeker.Minutes, tc, normalizeVariant(seeker.Variant)); err != nil {
+		return nil, err
+	}
+	return &id, nil
 }
 
 func (m *Manager) spawnRandom(ctx context.Context) error {
 	tc := commonTCs[rand.IntN(len(commonTCs))]
-	id := m.pickIdleIdentity(0, 0)
-	if id == nil {
-		return nil
-	}
-	return m.join(ctx, *id, tc.minutes, tc.tc, "standard")
-}
-
-func (m *Manager) pickIdleIdentity(preferLevel, nearScore int) *roster.Identity {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	var candidates []roster.Identity
-	for _, id := range m.roster {
-		if _, ok := m.active[id.ID]; ok {
-			continue
-		}
-		if m.inGame[id.ID] {
-			continue
-		}
-		if preferLevel > 0 && id.EngineLevel != preferLevel {
-			continue
-		}
-		if nearScore > 0 && !roster.WithinBand(id.Score, nearScore) {
-			continue
-		}
-		candidates = append(candidates, id)
-	}
-	if len(candidates) == 0 && preferLevel > 0 {
-		// Relax level filter; keep score band if possible.
-		for _, id := range m.roster {
-			if _, ok := m.active[id.ID]; ok || m.inGame[id.ID] {
-				continue
-			}
-			if nearScore > 0 && !roster.WithinBand(id.Score, nearScore) {
-				continue
-			}
-			candidates = append(candidates, id)
-		}
-	}
-	if len(candidates) == 0 {
-		for _, id := range m.roster {
-			if _, ok := m.active[id.ID]; ok || m.inGame[id.ID] {
-				continue
-			}
-			candidates = append(candidates, id)
-		}
-	}
-	if len(candidates) == 0 {
-		return nil
-	}
-	picked := candidates[rand.IntN(len(candidates))]
-	return &picked
+	id := roster.NewEphemeral(0)
+	return m.join(ctx, id, tc.minutes, tc.tc, "standard")
 }
 
 func (m *Manager) join(ctx context.Context, id roster.Identity, minutes int, tc, variant string) error {
+	if err := m.reg.Register(ctx, id.ID); err != nil {
+		return fmt.Errorf("register bot: %w", err)
+	}
 	res, err := m.chess.JoinLobby(ctx, id.ID, id.Name, id.CountryCode, id.Score, minutes, tc, variant, "random")
 	if err != nil {
+		_ = m.reg.Unregister(ctx, id.ID)
 		return err
 	}
 	m.presence.Online(m.rootCtx, id.ID)
@@ -519,7 +573,12 @@ func (m *Manager) leaveOne(ctx context.Context, playerID string) {
 		return
 	}
 	_ = m.chess.LeaveLobby(ctx, ab.lobbyID)
+	m.retireBot(ctx, playerID)
+}
+
+func (m *Manager) retireBot(ctx context.Context, playerID string) {
 	m.presence.Offline(playerID)
+	_ = m.reg.Unregister(ctx, playerID)
 }
 
 func (m *Manager) leaveAll(ctx context.Context) {
@@ -549,22 +608,16 @@ func (m *Manager) heartbeatAll(ctx context.Context) {
 	}
 }
 
-func (m *Manager) snapshotActive() map[string]*activeBot {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	out := make(map[string]*activeBot, len(m.active))
-	for k, v := range m.active {
-		out[k] = v
-	}
-	return out
-}
-
 func (m *Manager) MarkGameDone(playerID string) {
 	m.mu.Lock()
-	defer m.mu.Unlock()
 	delete(m.inGame, playerID)
-	// Bot finished a game and is no longer waiting — drop site presence until respawned.
-	if _, waiting := m.active[playerID]; !waiting {
-		m.presence.Offline(playerID)
+	waiting := false
+	if _, ok := m.active[playerID]; ok {
+		waiting = true
+	}
+	m.mu.Unlock()
+	// One-shot bots: unregister after the game so the ID is never reused.
+	if !waiting {
+		m.retireBot(context.Background(), playerID)
 	}
 }

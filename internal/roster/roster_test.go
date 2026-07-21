@@ -6,30 +6,27 @@ import (
 	"tomsoir-service-chess-bots/internal/roster"
 )
 
-func TestDefaultRosterStableIDs(t *testing.T) {
-	a := roster.DefaultRoster()
-	b := roster.DefaultRoster()
-	if len(a) != 60 {
-		t.Fatalf("expected 60 bots, got %d", len(a))
+func TestNewEphemeralUsuallyGuest(t *testing.T) {
+	guests := 0
+	n := 200
+	for i := 0; i < n; i++ {
+		id := roster.NewEphemeral(1200)
+		if id.ID == "" {
+			t.Fatal("empty id")
+		}
+		if id.Name == "Guest" {
+			guests++
+		}
+		if id.EngineLevel < 1 || id.EngineLevel > 6 {
+			t.Fatalf("bad level %d", id.EngineLevel)
+		}
+		if !roster.WithinBand(id.Score, 1200) {
+			t.Fatalf("score %d not near 1200", id.Score)
+		}
 	}
-	seen := map[string]bool{}
-	for i := range a {
-		if a[i].ID != b[i].ID {
-			t.Fatalf("unstable id at %d", i)
-		}
-		if a[i].Name == "" || a[i].CountryCode == "" {
-			t.Fatalf("empty name/country at %d", i)
-		}
-		if len(a[i].CountryCode) != 2 {
-			t.Fatalf("bad country %q at %d", a[i].CountryCode, i)
-		}
-		if seen[a[i].ID] {
-			t.Fatalf("duplicate id %s", a[i].ID)
-		}
-		seen[a[i].ID] = true
-		if a[i].EngineLevel < 1 || a[i].EngineLevel > 6 {
-			t.Fatalf("bad level %d", a[i].EngineLevel)
-		}
+	// RareNameChance=0.12 → expect most Guests; allow wide variance.
+	if guests < n/2 {
+		t.Fatalf("expected mostly Guest, got %d/%d", guests, n)
 	}
 }
 

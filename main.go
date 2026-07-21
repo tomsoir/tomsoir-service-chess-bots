@@ -15,7 +15,6 @@ import (
 	"tomsoir-service-chess-bots/internal/engineclient"
 	"tomsoir-service-chess-bots/internal/fleet"
 	"tomsoir-service-chess-bots/internal/play"
-	"tomsoir-service-chess-bots/internal/roster"
 	"tomsoir-service-chess-bots/internal/wsclient"
 )
 
@@ -52,21 +51,16 @@ func main() {
 }
 
 func runFleet(ctx context.Context) {
-	identities := roster.DefaultRoster()
-	ids := make([]string, len(identities))
-	for i, id := range identities {
-		ids[i] = id.ID
-	}
-
 	reg, err := botsreg.New(config.RedisAddr(), config.RedisPassword())
 	if err != nil {
 		log.Fatalf("bots registry: %v", err)
 	}
 	defer reg.Close()
-	if err := reg.RegisterAll(ctx, ids); err != nil {
-		log.Fatalf("register bots: %v", err)
+	// Drop preset/stale bot IDs — fleet registers ephemeral Guests on spawn only.
+	if err := reg.Clear(ctx); err != nil {
+		log.Fatalf("clear bots registry: %v", err)
 	}
-	log.Printf("registered %d bot identities in redis", len(ids))
+	log.Printf("bots registry cleared; ephemeral Guest bots will register on spawn")
 
 	engine, err := engineclient.New(config.EngineGRPCAddr(), config.EngineMaxConcurrency())
 	if err != nil {
@@ -76,7 +70,7 @@ func runFleet(ctx context.Context) {
 	chess := chessapi.New(config.ChessHTTPBase())
 	presence := wsclient.NewPresenceHub(config.RealtimeWSBase())
 	driver := play.New(chess, engine, config.RealtimeWSBase())
-	mgr := fleet.New(chess, identities, driver, presence)
+	mgr := fleet.New(chess, reg, driver, presence)
 	driver.SetOnDone(mgr.MarkGameDone)
 
 	log.Printf("fleet starting (chess=%s engine=%s ws=%s min=%d max=%d)",

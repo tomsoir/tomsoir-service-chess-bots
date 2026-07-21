@@ -33,6 +33,27 @@ func (r *Registry) Close() error {
 	return r.client.Close()
 }
 
+func (r *Registry) Clear(ctx context.Context) error {
+	if r == nil || r.client == nil {
+		return nil
+	}
+	return r.client.Del(ctx, keyBotIDs).Err()
+}
+
+func (r *Registry) Register(ctx context.Context, id string) error {
+	if r == nil || r.client == nil || id == "" {
+		return nil
+	}
+	return r.client.SAdd(ctx, keyBotIDs, id).Err()
+}
+
+func (r *Registry) Unregister(ctx context.Context, id string) error {
+	if r == nil || r.client == nil || id == "" {
+		return nil
+	}
+	return r.client.SRem(ctx, keyBotIDs, id).Err()
+}
+
 func (r *Registry) RegisterAll(ctx context.Context, ids []string) error {
 	if len(ids) == 0 {
 		return nil
