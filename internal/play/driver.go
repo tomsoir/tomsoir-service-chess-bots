@@ -166,7 +166,7 @@ func (d *Driver) playMove(ctx context.Context, bot roster.Identity, g *chessapi.
 	if uci == "" {
 		return nil
 	}
-	// Kid levels: occasional random legal-ish swap is handled by low skill; keep engine move.
+	// Kid levels: engine service applies Skill + MultiPV blunder noise.
 	updated, err := d.chess.MakeMove(ctx, fresh.ID, bot.ID, uci)
 	if err != nil {
 		return err
@@ -224,8 +224,13 @@ func engineMovetime(g *chessapi.Game, color string, level int) int {
 	if mt > 2000 {
 		mt = 2000
 	}
-	if level <= 2 && mt > 400 {
-		mt = 400
+	switch {
+	case level <= 1 && mt > 80:
+		mt = 80
+	case level == 2 && mt > 150:
+		mt = 150
+	case level == 3 && mt > 300:
+		mt = 300
 	}
 	return mt
 }
