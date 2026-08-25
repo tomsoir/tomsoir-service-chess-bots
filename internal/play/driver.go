@@ -105,7 +105,7 @@ func (d *Driver) HandleGame(parent context.Context, bot roster.Identity, gameID 
 		return
 	}
 
-	ticker := time.NewTicker(800 * time.Millisecond)
+	ticker := time.NewTicker(200 * time.Millisecond)
 	defer ticker.Stop()
 	for {
 		select {
@@ -140,16 +140,38 @@ func botColor(g *chessapi.Game, botID string) string {
 }
 
 func (d *Driver) playMove(ctx context.Context, bot roster.Identity, g *chessapi.Game, color string, maybeEmoji func(bool)) error {
-	delay := thinkDelay(bot.EngineLevel, len(g.Moves), g.OpeningComplete)
-	timer := time.NewTimer(delay)
-	defer timer.Stop()
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-timer.C:
+	movetime := engineMovetime(g, color, bot.EngineLevel)
+	searchStart := time.Now()
+	uci, err := d.engine.GetBestMove(ctx, g.FEN, g.Variant, bot.EngineLevel, movetime)
+	if err != nil {
+		return err
+	}
+	if uci == "" {
+		return nil
+	}
+	searchElapsed := time.Since(searchStart)
+
+	target := thinkDelay(thinkInput{
+		Level:            bot.EngineLevel,
+		MoveCount:        len(g.Moves),
+		OpeningComplete:  g.OpeningComplete,
+		Minutes:          g.Minutes,
+		IncrementSec:     g.IncrementSec,
+		RemainingClockMS: clockFor(g, color),
+		SearchElapsed:    searchElapsed,
+		SearchBudgetMS:   movetime,
+	})
+	if wait := target - searchElapsed; wait > 0 {
+		timer := time.NewTimer(wait)
+		defer timer.Stop()
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-timer.C:
+		}
 	}
 
-	// Re-check turn after delay.
+	// Re-check turn after thinking.
 	fresh, err := d.chess.GetGame(ctx, g.ID)
 	if err != nil {
 		return err
@@ -158,15 +180,6 @@ func (d *Driver) playMove(ctx context.Context, bot roster.Identity, g *chessapi.
 		return nil
 	}
 
-	movetime := engineMovetime(fresh, color, bot.EngineLevel)
-	uci, err := d.engine.GetBestMove(ctx, fresh.FEN, fresh.Variant, bot.EngineLevel, movetime)
-	if err != nil {
-		return err
-	}
-	if uci == "" {
-		return nil
-	}
-	// Kid levels: engine service applies Skill + MultiPV blunder noise.
 	updated, err := d.chess.MakeMove(ctx, fresh.ID, bot.ID, uci)
 	if err != nil {
 		return err
@@ -177,47 +190,15 @@ func (d *Driver) playMove(ctx context.Context, bot roster.Identity, g *chessapi.
 	return nil
 }
 
-func thinkDelay(level, moveCount int, openingComplete bool) time.Duration {
-	base := 800
-	switch level {
-	case 1:
-		base = 400
-	case 2:
-		base = 700
-	case 3:
-		base = 1200
-	case 4:
-		base = 1800
-	default:
-		base = 2500
+func clockFor(g *chessapi.Game, color string) int {
+	if color == "black" {
+		return g.BlackClock
 	}
-	if !openingComplete || moveCount < 6 {
-		base = base * 2 / 3
-	}
-	if moveCount > 20 {
-		base = base + 400
-	}
-	jitter := rand.IntN(base/2 + 200)
-	ms := base + jitter
-	if ms < 250 {
-		ms = 250
-	}
-	if ms > 8000 {
-		ms = 8000
-	}
-	// Stay under opening timeout (~25s) with margin.
-	if !openingComplete && ms > 12000 {
-		ms = 12000
-	}
-	return time.Duration(ms) * time.Millisecond
+	return g.WhiteClock
 }
 
 func engineMovetime(g *chessapi.Game, color string, level int) int {
-	clock := g.WhiteClock
-	if color == "black" {
-		clock = g.BlackClock
-	}
-	mt := clock / 10
+	mt := clockFor(g, color) / 10
 	if mt < 150 {
 		mt = 150
 	}
